@@ -120,7 +120,7 @@ class MainWindow(QMainWindow):
 
     def import_excel(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Выбрать файл Excel", "", "Excel files (*.xlsx *.xls)"
+            self, "Выбрать файл Excel", "", "Excel files (*.xlsx)"
         )
         if not path:
             return
