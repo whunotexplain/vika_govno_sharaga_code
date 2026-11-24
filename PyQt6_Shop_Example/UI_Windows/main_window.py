@@ -1,11 +1,12 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QComboBox, QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QMessageBox, QAbstractItemView
+    QMessageBox, QAbstractItemView, QFileDialog
 )
 from UI_Windows.product_details_window import ProductDetailsWindow
 from UI_Windows.cart_window import CartWindow
 from DB_Units.product_repository import ProductRepository
+from Data_Processing.data_loader import import_products
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -22,8 +23,6 @@ class MainWindow(QMainWindow):
         self.search = QLineEdit()
         self.search.setPlaceholderText("Поиск по названию...")
         self.category = QComboBox()
-        self.category.addItem("Все")
-        self.category.addItems(ProductRepository.categories())
         self.minimum, self.maximum = QDoubleSpinBox(), QDoubleSpinBox()
         self.minimum.setPrefix("От ")
         self.maximum.setPrefix("До ")
@@ -52,15 +51,32 @@ class MainWindow(QMainWindow):
         actions = QHBoxLayout()
         for title, callback in [
             ("Подробнее", self.show_details), ("В корзину", self.add_to_cart),
-            ("Корзина / заказ", self.open_cart), ("Обновить", self.refresh_products)
+            ("Корзина / заказ", self.open_cart), ("Импорт Excel", self.import_excel),
+            ("Обновить", self.refresh_all)
         ]:
             button = QPushButton(title)
             button.clicked.connect(callback)
             actions.addWidget(button)
         root.addLayout(actions)
+        self.refresh_all()
+
+    def refresh_categories(self):
+        selected = self.category.currentText()
+        self.category.blockSignals(True)
+        self.category.clear()
+        self.category.addItem("Все")
+        self.category.addItems(ProductRepository.categories())
+        index = self.category.findText(selected)
+        self.category.setCurrentIndex(index if index >= 0 else 0)
+        self.category.blockSignals(False)
+
+    def refresh_all(self):
+        self.refresh_categories()
         self.refresh_products()
 
     def refresh_products(self):
+        if not hasattr(self, "table"):
+            return
         self.products = ProductRepository.get_all(
             self.search.text(), self.category.currentText(),
             self.minimum.value(), self.maximum.value(), self.sort.currentText()
@@ -89,7 +105,9 @@ class MainWindow(QMainWindow):
         product = self.selected_product()
         if not product:
             return
-        item = self.cart.setdefault(product.id, {"name": product.name, "price": float(product.price), "quantity": 0})
+        item = self.cart.setdefault(product.id, {
+            "name": product.name, "price": float(product.price), "quantity": 0
+        })
         if item["quantity"] >= product.stock:
             QMessageBox.warning(self, "Остаток", "Недостаточно товара на складе")
             return
@@ -97,5 +115,18 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Добавлено: {product.name}", 3000)
 
     def open_cart(self):
-        CartWindow(self.cart, self.refresh_products, self).exec()
-        self.refresh_products()
+        CartWindow(self.cart, self.refresh_all, self).exec()
+        self.refresh_all()
+
+    def import_excel(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Выбрать файл Excel", "", "Excel files (*.xlsx *.xls)"
+        )
+        if not path:
+            return
+        try:
+            count = import_products(path)
+            self.refresh_all()
+            QMessageBox.information(self, "Импорт завершён", f"Обработано строк: {count}")
+        except Exception as error:
+            QMessageBox.critical(self, "Ошибка импорта", str(error))
